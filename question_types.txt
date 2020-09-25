@@ -1,0 +1,8 @@
+See Section 3 from
+http://mirror.iopb.res.in/tex-archive/macros/latex/contrib/moodle/moodle.pdf
+
+Multiple Choice Question (MCQ)
+Numerical
+Short Answer
+Essay Questions
+Cloze

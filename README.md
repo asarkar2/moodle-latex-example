@@ -18,7 +18,7 @@ encodes the png file to a text file
 
 If the figures are all kept in a specific folder and the command
 \graphicspath{} has been used, then also require the patch style file
-\graphicxx.sty
+moodlexpatch.sty. Use: `\usepackage{moodlexpatch}' after `\usepackage{moodle}`.
 
 ## Tikz package
 If you are using the package tikz make sure that the tikz package is

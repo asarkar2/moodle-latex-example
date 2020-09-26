@@ -1,0 +1,184 @@
+\NeedsTeXFormat{LaTeX2e}[1996/12/01]
+\ProvidesPackage{moodlexpatch}[2020/09/26 Package to modify moodle.sty]
+
+%% \usepackage{moodlexpatch}
+%% Patches moodle.sty to find the correct figure when \graphicspath{} is used.
+
+%% \usepackage[nomoodle]{moodlexpatch}
+%% Doesn't patch moodle.sty 
+
+%% \usepackage[redefine]{moodlexpatch}
+%% Redefines \includegraphics{} such that when the figure is not found, then
+%% a placeholder box is created in it's place. The size of the box can be 
+%% changed using the command \blankfigconfig{width}{height} passed before 
+%% \includegraphics{}.
+
+% References:
+% https://tex.stackexchange.com/questions/99070/check-for-a-valid-file-before-using-includegraphics/99099#99099
+%https://tex.stackexchange.com/questions/176201/how-to-create-placeholder-for-redefine-figure
+
+% Required packages
+\RequirePackage{epstopdf}
+\RequirePackage{xpatch}
+\RequirePackage{tcolorbox}
+\RequirePackage{xifthen}
+
+\newif\if@moodlexpatch
+\@moodlexpatchtrue
+\DeclareOption{nomoodle}{\@moodlexpatchfalse}
+
+\newif\if@redefine
+\@redefinefalse
+\DeclareOption{redefine}{\@redefinetrue}
+
+\ProcessOptions\relax
+
+% Push the eps file to the end of the graphicsfile list
+% If pdf/png is not found, then use it.
+\epstopdfsetup{update,append,prefersuffix=false,suffix=}
+
+% Code to check if graphics file exists by checking each graphicspath
+% recursively.
+\newif\ifgraphicexist
+
+%% Taken from graphics.sty
+\ifx\set@curr@file\@Gin@temp
+    \let\set@curr@file\@undefined
+\fi
+\ifx\set@curr@file\@undefined
+    \def\set@curr@file#1{%
+        \begingroup
+            \escapechar\m@ne
+            \xdef\@curr@file{\expandafter\string\csname\@firstofone#1\@empty\endcsname}%
+        \endgroup
+    }
+    \def\quote@name#1{"\quote@@name#1\@gobble""}
+    \def\quote@@name#1"{#1\quote@@name}
+    \def\unquote@name#1{\quote@@name#1\@gobble"}
+\fi
+
+%% Find the correct image
+\catcode`\*=11
+\newcommand\imagetest[1]{%
+    \global\graphicexisttrue
+    \ifx\detokenize\@undefined\else
+        \edef\Gin@extensions{\detokenize\expandafter{\Gin@extensions}}%
+    \fi
+    \begingroup
+    \let\input@path\Ginput@path
+    \set@curr@file{#1}%
+    \expandafter\filename@parse\expandafter{\@curr@file}%
+    \ifx\filename@ext\Gin@gzext
+        \expandafter\filename@parse\expandafter{\filename@base}%
+        \ifx\filename@ext\relax
+            \let\filename@ext\Gin@gzext
+        \else
+            \edef\Gin@ext{\Gin@ext\Gin@sepdefault\Gin@gzext}%
+        \fi
+    \fi
+    \ifx\filename@ext\relax
+        \@for\Gin@temp:=\Gin@extensions\do{%
+            \ifx\Gin@ext\relax
+                \Gin@getbase\Gin@temp
+            \fi%
+        }%
+    \else
+        \Gin@getbase{\Gin@sepdefault\filename@ext}%
+        \ifx\Gin@ext\relax
+            \let\Gin@savedbase\filename@base
+            \let\Gin@savedext\filename@ext
+            \edef\filename@base{\filename@base\Gin@sepdefault\filename@ext}%
+            \let\filename@ext\relax
+            \@for\Gin@temp:=\Gin@extensions\do{%
+                \ifx\Gin@ext\relax
+                    \Gin@getbase\Gin@temp
+                \fi%
+            }%
+            \ifx\Gin@ext\relax
+                \let\filename@base\Gin@savedbase
+                \let\filename@ext\Gin@savedext
+            \fi
+        \fi
+        \ifx\Gin@ext\relax
+            \global\graphicexistfalse
+            \def\Gin@base{\filename@area\filename@base}%
+            \edef\Gin@ext{\Gin@sepdefault\filename@ext}%
+        \fi
+    \fi
+    \ifx\Gin@ext\relax
+        \global\graphicexistfalse
+    \else
+        \@ifundefined{Gin@rule@\Gin@ext}%
+            {\global\graphicexistfalse}%
+            {}%
+    \fi
+    \ifx\Gin@ext\relax
+        \gdef\imageext{unknown}%
+    \else
+        \filename@parse{\@filef@und}
+        \xdef\imagearea{\filename@area}
+        \xdef\imagebase{\filename@base}
+        \xdef\imagepath{\@filef@und}
+        \xdef\imageext{\Gin@ext}%
+    \fi
+    \endgroup
+    \ifgraphicexist
+        \expandafter \@firstoftwo
+    \else
+        \expandafter \@secondoftwo
+    \fi  
+}
+\catcode`\*=12
+
+% If @moodlexpatch is true
+\if@moodlexpatch
+    \xpatchcmd{\moodle@includegraphics@int@int}%
+    {\edef\cmdline{\htmlize@imagemagick@convert\otherspace #2 -resize \moodle@graphics@geometry\otherspace #2.png}}%
+    {\imagetest{#2}{%
+        \ifthenelse{\equal{\detokenize\expandafter{\imageext}}%
+            {\detokenize{.png}}}%
+        {% Conversion to png NOT required
+        \edef\cmdline{}}%
+        {% Conversion to png required
+        \edef\cmdline{\htmlize@imagemagick@convert\otherspace \imagepath -resize \moodle@graphics@geometry\otherspace -flatten +profile 'icc' \imagearea\imagebase.png}}%
+    }%
+    {\typeout{Couldn't find #2}}%
+    }%
+    {\typeout{patch ok}}%
+    {\typeout{patch failed}}
+
+    \xpatchcmd{\moodle@includegraphics@int@int}%
+    {\def\cmdline{\openssl\otherspace enc -base64 -in #2.png -out #2.enc}}%
+    {\imagetest{#2}{\def\cmdline{\openssl\otherspace enc -base64 -in \imagearea\imagebase.png -out \imagebase.enc}}{}}%
+    {\typeout{patch ok}}%
+    {\typeout{patch failed}}
+\fi
+
+% Configuration of blank figure
+\newcommand{\blankfigconfig}[2]{%
+    \def\@figwidth{#1}%
+    \def\@figheight{#2}%
+}
+
+% Initialization
+\blankfigconfig{3cm}{4cm}
+
+% Draw a blank figure
+\newcommand{\blankfigure}{%
+    \begin{tcolorbox}[width=\@figwidth,height=\@figheight,%
+        colback=white,arc=0mm,auto outer arc]%
+    \end{tcolorbox}%
+}
+
+%% Redefine \includegraphics if @redefine is true
+\if@redefine
+    \let\StandardIncludeGraphics\includegraphics
+    \renewcommand{\includegraphics}[2][]{%
+        \imagetest{#2}{%
+            % If file exists
+            \StandardIncludeGraphics[#1]{#2}%        
+        }{% If figure doesn't exist
+            \blankfigure%
+        }
+    }
+\fi
